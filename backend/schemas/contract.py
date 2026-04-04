@@ -1,5 +1,6 @@
 from typing import List, Literal
-from pydantic import BaseModel, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ArchitectureParams(BaseModel):
@@ -11,6 +12,13 @@ class ArchitectureParams(BaseModel):
     d_ff: int
     vocab_size: int
     max_seq_len: int
+
+    @field_validator("d_model", "n_heads", "n_layers", "d_ff", "vocab_size", "max_seq_len")
+    @classmethod
+    def must_be_positive(cls, v: int, info) -> int:
+        if v < 1:
+            raise ValueError(f"{info.field_name} must be a positive integer, got {v}")
+        return v
 
 
 class ArchitectureBlueprint(BaseModel):

@@ -1,8 +1,14 @@
 import json
+import logging
+
+from pydantic import ValidationError
 
 from backend.nodes.node0_validator import run_node0
 from backend.schemas.contract import ArchitectureBlueprint
 from backend.tools.gemini_client import get_pro_model, pdf_part_from_gcs, strip_markdown_fences
+from backend.tools.model_response import ModelResponseError
+
+logger = logging.getLogger(__name__)
 
 
 class ScopeRejectedError(Exception):
@@ -78,21 +84,61 @@ Rules:
 
 
 async def run_node1(gcs_uri: str, pre_validated: bool = False) -> ArchitectureBlueprint:
+    logger.info(
+        "Node 1 — extraction start | gcs_uri=%s | pre_validated=%s", gcs_uri, pre_validated
+    )
+
     if not pre_validated:
-        # Layer 1: scope check — only when endpoint has no stored node0 result
+        logger.debug("Node 1 — running internal Node 0 scope check (not pre-validated)")
         scope = await run_node0(gcs_uri)
         if scope.result != "PASS":
+            logger.warning("Node 1 — internal scope check FAILED: %s", scope.reason)
             raise ScopeRejectedError(scope.reason)
+        logger.info("Node 1 — internal scope check PASSED")
+
+    prompt_name = "FORCED" if pre_validated else "GATED"
+    logger.debug("Node 1 — using %s extraction prompt", prompt_name)
 
     model = get_pro_model()
     pdf = pdf_part_from_gcs(gcs_uri)
     prompt = _EXTRACTION_PROMPT_FORCED if pre_validated else _EXTRACTION_PROMPT_GATED
     response = await model.generate_content_async([pdf, prompt])
-    text = strip_markdown_fences(response.text)
-    data = json.loads(text)
 
-    # Error escape only applies when we ran our own scope check (not pre-validated)
-    if not pre_validated and data.get("error"):
-        raise ScopeRejectedError(data.get("reason", "Paper does not contain an extractable ML architecture."))
+    raw_text = getattr(response, "text", None)
+    logger.debug("Node 1 — raw model response: %s", raw_text)
 
-    return ArchitectureBlueprint(**data)
+    if raw_text is None:
+        raise ModelResponseError(
+            "node1: model returned no text (possible safety block or quota exhaustion)"
+        )
+
+    cleaned = strip_markdown_fences(raw_text)
+
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        logger.warning("Node 1 — JSON parse failed | preview=%r | error=%s", cleaned[:300], exc)
+        raise ModelResponseError(f"node1: model response was not valid JSON — {exc}") from exc
+
+    # Check error escape on both paths (model may still refuse on forced prompt)
+    if data.get("error"):
+        reason = data.get("reason", "Paper does not contain an extractable ML architecture.")
+        if pre_validated:
+            logger.error("Node 1 — forced path returned error escape: %s", reason)
+        else:
+            logger.warning("Node 1 — model returned error escape: %s", reason)
+        raise ScopeRejectedError(reason)
+
+    try:
+        blueprint = ArchitectureBlueprint(**data)
+    except ValidationError as exc:
+        logger.warning("Node 1 — schema validation failed | data=%r | error=%s", data, exc)
+        raise ModelResponseError(f"node1: architecture blueprint schema invalid — {exc}") from exc
+
+    logger.info(
+        "Node 1 — extraction complete | model_type=%s | n_layers=%s | d_model=%s",
+        blueprint.model_type,
+        blueprint.architecture.n_layers,
+        blueprint.architecture.d_model,
+    )
+    return blueprint

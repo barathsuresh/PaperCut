@@ -156,6 +156,8 @@ def call_nat_nemotron(prompt: str) -> str:
 
 def parse_bottlenecks(raw: str) -> list[dict[str, str]]:
     """Parse the JSON array of bottleneck analyses from LLM output."""
+    if raw is None:
+        raise ValueError("NAT returned None for bottleneck analysis (possible content filter or null response)")
     # Try to extract JSON from the response
     raw = raw.strip()
     # Handle markdown code fences
@@ -170,6 +172,8 @@ def parse_bottlenecks(raw: str) -> list[dict[str, str]]:
 
 def clean_cuda_stub(raw: str) -> str:
     """Clean up the CUDA stub output, removing markdown fences."""
+    if raw is None:
+        raise ValueError("NAT returned None for CUDA stub (possible content filter or null response)")
     raw = raw.strip()
     raw = re.sub(r"^```(?:cuda|cpp|c\+\+)?\s*\n?", "", raw)
     raw = re.sub(r"\n?```\s*$", "", raw)

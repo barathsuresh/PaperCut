@@ -119,8 +119,21 @@ def _call_nvidia_chat(
             )
 
         # --- Success ---
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
+        try:
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, ValueError) as exc:
+            body = resp.text[:500]
+            raise NATError(
+                f"NVIDIA API returned unexpected response structure: {exc} | body: {body}"
+            ) from exc
+
+        if content is None:
+            body = resp.text[:500]
+            raise NATError(
+                f"NVIDIA API returned null content despite generating tokens "
+                f"(possible content filter or model refusal) | body: {body}"
+            )
         usage = data.get("usage", {})
 
         logger.info(

@@ -11,9 +11,9 @@ python-multipart>=0.0.9
 httpx>=0.27.0
 
 # ── ML Intelligence (Nodes 2 & 3 + NAT client) ──────────────
-jsonschema>=4.20
-pyyaml>=6.0
-requests>=2.31
+requests>=2.31.0
+jsonschema>=4.21.0
+pyyaml>=6.0.0
 
 # ── Testing ──────────────────────────────────────────────────
 pytest>=8.0.0

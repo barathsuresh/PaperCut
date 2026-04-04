@@ -1,7 +1,10 @@
-import json
+import logging
 
 from backend.schemas.validator import ScopeValidationResult
-from backend.tools.gemini_client import get_flash_model, pdf_part_from_gcs, strip_markdown_fences
+from backend.tools.gemini_client import get_flash_model, pdf_part_from_gcs
+from backend.tools.model_response import ModelResponseError, parse_model_json
+
+logger = logging.getLogger(__name__)
 
 SCOPE_CHECK_PROMPT = """\
 You are a strict classifier. Read this paper and decide if its PRIMARY contribution is \
@@ -29,9 +32,11 @@ Be strict. When in doubt, return FAIL.\
 
 
 async def run_node0(gcs_uri: str) -> ScopeValidationResult:
+    logger.info("Node 0 — scope validation start | gcs_uri=%s", gcs_uri)
     model = get_flash_model()
     pdf = pdf_part_from_gcs(gcs_uri)
     response = await model.generate_content_async([pdf, SCOPE_CHECK_PROMPT])
-    text = strip_markdown_fences(response.text)
-    data = json.loads(text)
-    return ScopeValidationResult(**data)
+    logger.debug("Node 0 — raw model response: %s", getattr(response, "text", None))
+    result = parse_model_json(response.text, ScopeValidationResult, "node0")
+    logger.info("Node 0 — result=%s | reason=%s", result.result, result.reason)
+    return result

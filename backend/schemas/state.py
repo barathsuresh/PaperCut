@@ -10,6 +10,6 @@ class AgentState(TypedDict, total=False):
     scope_valid: bool
     scope_reason: str
     blueprint: Optional[ArchitectureBlueprint]
-    scaffold_code: Optional[str]
+    scaffold_code: Optional[Dict[str, Any]]
     cuda_blueprint: Optional[Dict[str, Any]]
     error: Optional[str]

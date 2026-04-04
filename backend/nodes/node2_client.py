@@ -1,11 +1,6 @@
 """
 Node 2 client — bridges the LangGraph graph to the real PyTorch Architect.
-
-Translates between the graph's dict-in/dict-out interface and
-nodes.node2_pytorch_architect.run_node2 which expects a JSON file path
-and returns an output directory Path.
 """
-
 from __future__ import annotations
 
 import json
@@ -21,27 +16,26 @@ def run_node2(research_contract: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate a PyTorch scaffold from an architecture blueprint dict.
 
-    Called by backend.graph._node2 with blueprint.model_dump().
-    Returns a dict whose "status" key is read by the graph layer.
+    Returns a dict whose "status" key is "completed" or "error".
     """
+    tmp_path: Path | None = None
     try:
-        from nodes.node2_pytorch_architect import run_node2 as _real_run_node2
         from nat import make_nat_caller_code
+        from nat.nat_client import NATAuthError, NATError, NATTimeoutError
+        from nodes.node2_pytorch_architect import run_node2 as _real_run_node2
 
-        # run_node2 reads a JSON file, so write the dict to a temp file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             json.dump(research_contract, tmp)
             tmp_path = Path(tmp.name)
 
         caller = make_nat_caller_code()
-        output_dir = _real_run_node2(
-            blueprint_path=tmp_path,
-            nat_caller=caller,
-        )
+        output_dir = _real_run_node2(blueprint_path=tmp_path, nat_caller=caller)
 
-        # Read back generated files for the graph state
+        if not output_dir.exists():
+            raise FileNotFoundError(
+                f"Node 2 output directory not found after generation: {output_dir}"
+            )
+
         files_generated = {
             f.name: f.stat().st_size
             for f in output_dir.iterdir()
@@ -49,22 +43,24 @@ def run_node2(research_contract: Dict[str, Any]) -> Dict[str, Any]:
         }
 
         logger.info("Node 2 completed — %d files in %s", len(files_generated), output_dir)
-
         return {
             "status": "completed",
             "output_dir": str(output_dir),
             "files": files_generated,
         }
 
+    except NATTimeoutError as e:
+        logger.error("Node 2 NAT timeout: %s", e)
+        return {"status": "error", "error": str(e), "error_type": "timeout"}
+    except NATAuthError as e:
+        logger.error("Node 2 NAT auth error: %s", e)
+        return {"status": "error", "error": str(e), "error_type": "auth"}
+    except NATError as e:
+        logger.error("Node 2 NAT error: %s", e)
+        return {"status": "error", "error": str(e), "error_type": "nat"}
     except Exception as e:
-        logger.error("Node 2 failed: %s", e)
-        return {
-            "status": "error",
-            "error": str(e),
-        }
+        logger.error("Node 2 failed: %s", e, exc_info=True)
+        return {"status": "error", "error": str(e)}
     finally:
-        # Clean up temp file if it was created
-        try:
+        if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
-        except NameError:
-            pass
