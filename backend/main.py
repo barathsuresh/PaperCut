@@ -53,7 +53,12 @@ sessions: Dict[str, Dict[str, Any]] = {}
 
 
 async def _persist_for_pipeline(session_id: str) -> None:
-    await save_session(session_id, sessions[session_id])
+    data = sessions.get(session_id)
+    if data is None:
+        logger.warning("_persist_for_pipeline called for unknown session=%s", session_id)
+        return
+    asyncio.create_task(save_session(session_id, data))
+    await asyncio.sleep(0)
 
 
 @asynccontextmanager
