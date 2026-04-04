@@ -7,9 +7,9 @@ from backend.nodes.node3_client import run_node3
 from backend.schemas.state import AgentState
 
 
-def _node0(state: AgentState) -> dict:
+async def _node0(state: AgentState) -> dict:
     try:
-        result = run_node0(state["pdf_gcs_uri"])
+        result = await run_node0(state["pdf_gcs_uri"])
         return {
             "scope_valid": result.result == "PASS",
             "scope_reason": result.reason,
@@ -18,21 +18,21 @@ def _node0(state: AgentState) -> dict:
         return {"scope_valid": False, "scope_reason": str(e), "error": str(e)}
 
 
-def _node1(state: AgentState) -> dict:
+async def _node1(state: AgentState) -> dict:
     try:
-        blueprint = run_node1(state["pdf_gcs_uri"])
+        blueprint = await run_node1(state["pdf_gcs_uri"])
         return {"blueprint": blueprint}
     except Exception as e:
         return {"error": str(e)}
 
 
-def _node2(state: AgentState) -> dict:
+async def _node2(state: AgentState) -> dict:
     blueprint = state.get("blueprint")
     result = run_node2(blueprint.model_dump() if blueprint else {})
     return {"scaffold_code": result.get("status")}
 
 
-def _node3(state: AgentState) -> dict:
+async def _node3(state: AgentState) -> dict:
     blueprint = state.get("blueprint")
     result = run_node3(blueprint.model_dump() if blueprint else {})
     return {"cuda_blueprint": result}
