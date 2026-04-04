@@ -25,6 +25,37 @@ class Node1Response(BaseModel):
     blueprint: ArchitectureBlueprint
 
 
+class Node2Response(BaseModel):
+    session_id: str
+    status: str
+    output_dir: Optional[str] = None
+    files: Optional[dict] = None
+    error: Optional[str] = None
+
+
+class Node3Response(BaseModel):
+    session_id: str
+    status: str
+    output_dir: Optional[str] = None
+    stub_files: Optional[list] = None
+    bottlenecks: Optional[list] = None
+    meta: Optional[dict] = None
+    error: Optional[str] = None
+
+
+class PipelineResponse(BaseModel):
+    session_id: str
+    scope_valid: bool
+    scope_reason: Optional[str] = None
+    blueprint: Optional[ArchitectureBlueprint] = None
+    node2_status: str
+    node2_files: Optional[dict] = None
+    node3_status: str
+    node3_stub_files: Optional[list] = None
+    node3_bottlenecks: Optional[list] = None
+    error: Optional[str] = None
+
+
 class ChatRequest(BaseModel):
     session_id: str
     message: str

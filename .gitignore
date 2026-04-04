@@ -4,6 +4,7 @@ gcp-key.json
 
 # Python
 __pycache__/
+*.pyc
 *.py[cod]
 *.pyo
 .venv/
@@ -26,14 +27,21 @@ outputs/
 
 # Workspace / editors
 .claude/
+# IDE / tools
 .idea/
 .vscode/
+.claude/
+.codex
 *.swp
 *.lock
 .~lock.*
 
-# Project files
-ArXiv_Agent_Report_v2.docx
-
 # OS
 .DS_Store
+
+# Local docs
+ArXiv_Agent_Report_v2.docx
+
+# Caches / outputs
+demo_cache/
+outputs/

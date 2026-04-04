@@ -17,23 +17,32 @@ logger = logging.getLogger(__name__)
 
 _SESSION_PREFIX = "sessions/"
 
+# Module-level singleton — avoids re-initialising credentials on every GCS call
+_gcs_client: storage.Client | None = None
+
+
+def _get_storage_client() -> storage.Client:
+    global _gcs_client
+    if _gcs_client is None:
+        _gcs_client = storage.Client()
+    return _gcs_client
+
 
 # ── sync helpers (run in thread pool) ────────────────────────────────────────
 
 def _list_session_blobs() -> list:
-    client = storage.Client()
-    return list(client.bucket(config.GCP_BUCKET_NAME).list_blobs(prefix=_SESSION_PREFIX))
+    return list(
+        _get_storage_client().bucket(config.GCP_BUCKET_NAME).list_blobs(prefix=_SESSION_PREFIX)
+    )
 
 
 def _download_json(blob_name: str) -> dict:
-    client = storage.Client()
-    blob = client.bucket(config.GCP_BUCKET_NAME).blob(blob_name)
+    blob = _get_storage_client().bucket(config.GCP_BUCKET_NAME).blob(blob_name)
     return json.loads(blob.download_as_text())
 
 
 def _upload_json(blob_name: str, data: dict) -> None:
-    client = storage.Client()
-    blob = client.bucket(config.GCP_BUCKET_NAME).blob(blob_name)
+    blob = _get_storage_client().bucket(config.GCP_BUCKET_NAME).blob(blob_name)
     blob.upload_from_string(json.dumps(data), content_type="application/json")
 
 
@@ -51,6 +60,8 @@ async def load_all_sessions() -> Dict[str, Dict[str, Any]]:
             try:
                 data = await asyncio.to_thread(_download_json, blob.name)
                 sessions[session_id] = data
+            except json.JSONDecodeError as e:
+                logger.warning("Corrupt session blob %s — skipping: %s", session_id, e)
             except Exception as e:
                 logger.warning("Could not load session %s: %s", session_id, e)
         logger.info("Loaded %d session(s) from GCS.", len(sessions))
@@ -60,10 +71,26 @@ async def load_all_sessions() -> Dict[str, Dict[str, Any]]:
         return {}
 
 
-async def save_session(session_id: str, data: dict) -> None:
-    """Persist a single session to GCS. Errors are logged and swallowed."""
-    try:
-        blob_name = f"{_SESSION_PREFIX}{session_id}.json"
-        await asyncio.to_thread(_upload_json, blob_name, data)
-    except Exception as e:
-        logger.warning("Could not persist session %s: %s", session_id, e)
+async def save_session(session_id: str, data: dict, _retries: int = 2) -> None:
+    """Persist a single session to GCS with up to *_retries* retry attempts."""
+    blob_name = f"{_SESSION_PREFIX}{session_id}.json"
+    for attempt in range(1, _retries + 2):
+        try:
+            await asyncio.to_thread(_upload_json, blob_name, data)
+            logger.debug(
+                "Session persisted | session=%s | keys=%s", session_id, list(data.keys())
+            )
+            return
+        except Exception as e:
+            if attempt <= _retries:
+                wait = 0.5 * attempt
+                logger.warning(
+                    "Session persist attempt %d/%d failed | session=%s | retrying in %.1fs | %s",
+                    attempt, _retries + 1, session_id, wait, e,
+                )
+                await asyncio.sleep(wait)
+            else:
+                logger.error(
+                    "Session persist FAILED after %d attempts | session=%s | %s",
+                    _retries + 1, session_id, e,
+                )
