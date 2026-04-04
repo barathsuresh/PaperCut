@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 GCP_PROJECT_ID: str = os.environ.get("GCP_PROJECT_ID", "")
 GCP_BUCKET_NAME: str = os.environ.get("GCP_BUCKET_NAME", "")
