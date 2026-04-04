@@ -1,0 +1,7 @@
+[
+  {
+    "operation": "scaled_dot_product_attention",
+    "reason": "The attention matrix is quadratic in sequence length and creates a large intermediate tensor.",
+    "estimated_speedup": "2x to 3x with fusion"
+  }
+]

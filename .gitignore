@@ -10,7 +10,10 @@ gcp-key.json
 ArXiv_Agent_Report_v2.docx
 # caches / outputs
 .codex
-demo_cache/
+demo_cache/*
+!demo_cache/.gitkeep
+!demo_cache/attention_is_all_you_need/
+!demo_cache/attention_is_all_you_need/**
 outputs/
 # Credentials
 .env

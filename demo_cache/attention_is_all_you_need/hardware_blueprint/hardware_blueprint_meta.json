@@ -1,0 +1,7 @@
+{
+  "source": "demo_cache",
+  "note": "Annotated stubs only. This directory is a demo artifact, not executable CUDA.",
+  "stub_files": [
+    "fused_attention_stub.cu"
+  ]
+}

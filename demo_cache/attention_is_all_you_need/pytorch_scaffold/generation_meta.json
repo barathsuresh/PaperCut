@@ -1,0 +1,10 @@
+{
+  "source": "demo_cache",
+  "attempts": 1,
+  "files_generated": [
+    "model.py",
+    "dataset.py",
+    "train.py",
+    "config.yaml"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "paper_title": "Attention Is All You Need",
+  "source": "demo_cache",
+  "description": "Prebaked demo artifacts for offline rehearsals and judge demos.",
+  "artifacts": {
+    "node0": "node0_result.json",
+    "node1": "blueprint.json",
+    "node2": "node2_result.json",
+    "node3": "node3_result.json"
+  }
+}

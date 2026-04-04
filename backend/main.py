@@ -4,12 +4,14 @@ from typing import Any, Dict, Optional
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from google.api_core.exceptions import GoogleAPICallError
 
 from backend.chat.chat_handler import handle_chat
 from backend.nodes.node0_validator import run_node0
 from backend.nodes.node1_ingestor import ScopeRejectedError, run_node1
+from backend.pipeline import PipelineManager, sse_event_stream
 from backend.schemas.api import (
     ChatRequest,
     ChatResponse,
@@ -17,6 +19,9 @@ from backend.schemas.api import (
     Node0Response,
     Node1Response,
     NodeRunRequest,
+    RunAcceptedResponse,
+    RunRequest,
+    RunStatusResponse,
     UploadResponse,
 )
 from backend.tools.pdf_loader import upload_pdf_bytes, upload_pdf_from_url
@@ -32,6 +37,7 @@ app.add_middleware(
 
 # In-memory session store: session_id -> session data dict
 sessions: Dict[str, Dict[str, Any]] = {}
+pipeline_manager = PipelineManager(sessions)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -138,3 +144,54 @@ async def chat(body: ChatRequest):
         raise HTTPException(status_code=502, detail=f"Vertex AI error: {e.message}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/run", response_model=RunAcceptedResponse)
+async def run_pipeline(body: RunRequest):
+    if not body.use_demo_cache and not body.pdf_url and not body.gcs_uri:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide pdf_url, gcs_uri, or set use_demo_cache=true.",
+        )
+
+    try:
+        run = pipeline_manager.start_run(
+            pdf_url=body.pdf_url,
+            gcs_uri=body.gcs_uri,
+            session_id=body.session_id,
+            use_demo_cache=body.use_demo_cache,
+            demo_cache_key=body.demo_cache_key,
+        )
+        run_id = run["run_id"]
+        return RunAcceptedResponse(
+            run_id=run_id,
+            session_id=run["session_id"],
+            status=run["status"],
+            current_node=run["current_node"],
+            poll_url=f"/runs/{run_id}",
+            stream_url=f"/runs/{run_id}/events",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/runs/{run_id}", response_model=RunStatusResponse)
+async def get_run_status(run_id: str):
+    try:
+        run = pipeline_manager.get_run(run_id)
+        return RunStatusResponse(**run)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+
+@app.get("/runs/{run_id}/events")
+async def stream_run_events(run_id: str):
+    try:
+        pipeline_manager.get_run(run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    return StreamingResponse(
+        sse_event_stream(pipeline_manager, run_id),
+        media_type="text/event-stream",
+    )

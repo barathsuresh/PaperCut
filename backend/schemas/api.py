@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 from backend.schemas.contract import ArchitectureBlueprint
@@ -42,3 +42,40 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+
+
+class RunRequest(BaseModel):
+    pdf_url: Optional[str] = None
+    gcs_uri: Optional[str] = None
+    session_id: Optional[str] = None
+    use_demo_cache: bool = False
+    demo_cache_key: str = "attention_is_all_you_need"
+
+
+class RunAcceptedResponse(BaseModel):
+    run_id: str
+    session_id: str
+    status: str
+    current_node: Optional[str] = None
+    poll_url: str
+    stream_url: str
+
+
+class RunEvent(BaseModel):
+    sequence: int
+    timestamp: str
+    node: Optional[str] = None
+    status: str
+    message: str
+
+
+class RunStatusResponse(BaseModel):
+    run_id: str
+    session_id: str
+    status: str
+    current_node: Optional[str] = None
+    created_at: str
+    updated_at: str
+    events: List[RunEvent]
+    outputs: Dict[str, Any]
+    error: Optional[str] = None

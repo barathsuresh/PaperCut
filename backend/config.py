@@ -10,3 +10,36 @@ GOOGLE_APPLICATION_CREDENTIALS: str = os.environ.get("GOOGLE_APPLICATION_CREDENT
 
 GEMINI_FLASH_MODEL: str = os.environ.get("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
 GEMINI_PRO_MODEL: str = os.environ.get("GEMINI_PRO_MODEL", "gemini-2.5-pro")
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def runtime_environment() -> dict[str, str]:
+    return {
+        "GCP_PROJECT_ID": GCP_PROJECT_ID,
+        "GCP_BUCKET_NAME": GCP_BUCKET_NAME,
+        "GCP_REGION": GCP_REGION,
+        "GOOGLE_APPLICATION_CREDENTIALS": GOOGLE_APPLICATION_CREDENTIALS,
+        "GEMINI_FLASH_MODEL": GEMINI_FLASH_MODEL,
+        "GEMINI_PRO_MODEL": GEMINI_PRO_MODEL,
+    }
+
+
+def validate_runtime_config(*, requires_bucket: bool = False) -> None:
+    missing = []
+
+    if not GCP_PROJECT_ID:
+        missing.append("GCP_PROJECT_ID")
+    if not GOOGLE_APPLICATION_CREDENTIALS:
+        missing.append("GOOGLE_APPLICATION_CREDENTIALS")
+    if requires_bucket and not GCP_BUCKET_NAME:
+        missing.append("GCP_BUCKET_NAME")
+
+    if missing:
+        joined = ", ".join(missing)
+        raise ConfigError(
+            f"Missing required environment variables: {joined}. "
+            "Copy .env.example to .env and set your GCP values."
+        )

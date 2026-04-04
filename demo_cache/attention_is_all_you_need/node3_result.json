@@ -1,0 +1,6 @@
+{
+  "status": "cached",
+  "output_dir": "demo_cache/attention_is_all_you_need/hardware_blueprint",
+  "top_bottleneck": "scaled_dot_product_attention",
+  "judge_notes": "Fusing attention avoids writing the full attention matrix to global memory between matmul, softmax, and value projection."
+}
