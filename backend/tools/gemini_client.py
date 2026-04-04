@@ -1,33 +1,58 @@
 import re
+from typing import Any
 
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part
+from google import genai
+from google.genai import types
 
-_initialized = False
+_client: genai.Client | None = None
 
 
-def _ensure_init() -> None:
-    global _initialized
-    if not _initialized:
+def _get_client() -> genai.Client:
+    global _client
+    if _client is None:
         from backend import config
-        vertexai.init(project=config.GCP_PROJECT_ID, location=config.GCP_REGION)
-        _initialized = True
+        _client = genai.Client(
+            vertexai=True,
+            project=config.GCP_PROJECT_ID,
+            location=config.GCP_REGION,
+        )
+    return _client
 
 
-def get_flash_model() -> GenerativeModel:
-    _ensure_init()
+class _AsyncModelWrapper:
+    """Keeps the same .generate_content_async() interface as the old vertexai
+    GenerativeModel so all call sites (node0, node1, chat) stay unchanged."""
+
+    def __init__(self, model_name: str) -> None:
+        self._model_name = model_name
+
+    async def generate_content_async(self, contents: Any, stream: bool = False):
+        client = _get_client()
+        if stream:
+            async def _gen():
+                stream = await client.aio.models.generate_content_stream(
+                    model=self._model_name, contents=contents
+                )
+                async for chunk in stream:
+                    yield chunk
+            return _gen()
+        return await client.aio.models.generate_content(
+            model=self._model_name, contents=contents
+        )
+
+
+def get_flash_model() -> _AsyncModelWrapper:
     from backend import config
-    return GenerativeModel(config.GEMINI_FLASH_MODEL)
+    return _AsyncModelWrapper(config.GEMINI_FLASH_MODEL)
 
 
-def get_pro_model() -> GenerativeModel:
-    _ensure_init()
+def get_pro_model() -> _AsyncModelWrapper:
     from backend import config
-    return GenerativeModel(config.GEMINI_PRO_MODEL)
+    return _AsyncModelWrapper(config.GEMINI_PRO_MODEL)
 
 
-def pdf_part_from_gcs(gcs_uri: str) -> Part:
-    return Part.from_uri(gcs_uri, mime_type="application/pdf")
+def pdf_part_from_gcs(gcs_uri: str) -> types.Part:
+    return types.Part.from_uri(file_uri=gcs_uri, mime_type="application/pdf")
 
 
 def strip_markdown_fences(text: str) -> str:
