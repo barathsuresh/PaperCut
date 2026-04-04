@@ -7,3 +7,8 @@ gcp-key.json
 *.lock
 .~lock.*
 *.swp
+ArXiv_Agent_Report_v2.docx
+# caches / outputs
+.codex
+demo_cache/
+outputs/

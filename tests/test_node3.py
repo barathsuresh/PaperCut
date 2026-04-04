@@ -272,3 +272,49 @@ class TestNode3Pipeline:
                 assert section in content, (
                     f"{cu_file.name} should have placeholder for '{section}'"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — hit real NVIDIA API
+# ---------------------------------------------------------------------------
+
+SCAFFOLD_CACHE = (
+    Path(__file__).resolve().parent.parent
+    / "demo_cache" / "attention_is_all_you_need" / "pytorch_scaffold"
+)
+
+
+@pytest.mark.integration
+class TestNode3Integration:
+    """Requires network access and a valid NVIDIA_API_KEY in .env."""
+
+    def test_end_to_end_with_real_api(self, tmp_path: Path):
+        from nat.nat_client import make_nat_caller_reason
+
+        output_dir = tmp_path / "hw_blueprint"
+        caller = make_nat_caller_reason()
+
+        # Use demo_cache scaffold as input (known-good Node 2 output)
+        result = run_node3(SCAFFOLD_CACHE, output_dir, nat_caller=caller)
+
+        assert result == output_dir
+
+        # Must produce at least one .cu stub
+        cu_files = list(output_dir.glob("*.cu"))
+        assert len(cu_files) >= 1, f"Expected >=1 .cu stub, found {len(cu_files)}"
+
+        # Every stub must have all required annotation sections
+        for cu_file in cu_files:
+            content = cu_file.read_text()
+            missing = validate_stub_annotations(content)
+            assert missing == [], (
+                f"{cu_file.name} missing: {missing}"
+            )
+
+        # Bottleneck analysis JSON should exist with at least 1 entry
+        analysis = json.loads((output_dir / "bottleneck_analysis.json").read_text())
+        assert len(analysis) >= 1
+
+        # Metadata must describe output as annotated stubs
+        meta = json.loads((output_dir / "hardware_blueprint_meta.json").read_text())
+        assert "not executable" in meta["note"].lower() or "annotated stubs" in meta["note"].lower()

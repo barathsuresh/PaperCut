@@ -8,7 +8,6 @@ Covers:
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -290,3 +289,37 @@ class TestRetryExhaustion:
             run_node2(valid_blueprint_path, output_dir, nat_caller=bad_nat)
 
         assert "3 retries" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — hit real NVIDIA API
+# ---------------------------------------------------------------------------
+
+SAMPLE_CONTRACT = Path(__file__).resolve().parent.parent / "contracts" / "sample_attention_is_all_you_need.json"
+
+
+@pytest.mark.integration
+class TestNode2Integration:
+    """Requires network access and a valid NVIDIA_API_KEY in .env."""
+
+    def test_end_to_end_with_real_api(self, tmp_path: Path):
+        from nat.nat_client import make_nat_caller_code
+
+        output_dir = tmp_path / "scaffold"
+        caller = make_nat_caller_code()
+        result = run_node2(SAMPLE_CONTRACT, output_dir, nat_caller=caller)
+
+        assert result == output_dir
+        for f in ("model.py", "dataset.py", "train.py", "config.yaml"):
+            path = output_dir / f
+            assert path.exists(), f"{f} not generated"
+            assert path.stat().st_size > 0, f"{f} is empty"
+
+        # model.py should contain nn.Module
+        model_code = (output_dir / "model.py").read_text()
+        assert "nn.Module" in model_code or "Module" in model_code
+
+        # Metadata should show attempt 1 (valid contract, should pass first try)
+        meta = json.loads((output_dir / "generation_meta.json").read_text())
+        assert meta["attempts"] == 1
+        assert meta["dimension_errors_on_input"] == []
