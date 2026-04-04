@@ -76,7 +76,7 @@ async def upload(
             gcs_uri = await upload_pdf_bytes(pdf_bytes, session_id)
 
         sessions[session_id] = {"gcs_uri": gcs_uri, "history": []}
-        _persist(session_id)
+        await save_session(session_id, sessions[session_id])
         return UploadResponse(session_id=session_id, gcs_uri=gcs_uri)
 
     except httpx.HTTPStatusError as e:
@@ -103,7 +103,7 @@ async def run_node0_endpoint(body: NodeRunRequest):
             "result": result.result,
             "reason": result.reason,
         }
-        _persist(session_id)
+        await save_session(session_id, sessions[session_id])
         return Node0Response(
             session_id=session_id, result=result.result, reason=result.reason
         )
@@ -126,7 +126,7 @@ async def run_node1_endpoint(body: NodeRunRequest):
         pre_validated = bool(node0 and node0.get("result") == "PASS")
         blueprint = await run_node1(gcs_uri, pre_validated=pre_validated)
         sessions[session_id]["node1_result"] = blueprint.model_dump()
-        _persist(session_id)
+        await save_session(session_id, sessions[session_id])
         return Node1Response(session_id=session_id, blueprint=blueprint)
 
     except ScopeRejectedError as e:
