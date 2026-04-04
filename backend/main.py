@@ -33,6 +33,10 @@ from backend.tools.pdf_loader import upload_pdf_bytes, upload_pdf_from_url
 sessions: Dict[str, Dict[str, Any]] = {}
 
 
+async def _persist_for_pipeline(session_id: str) -> None:
+    await save_session(session_id, sessions[session_id])
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Load persisted sessions from GCS before accepting requests
@@ -53,6 +57,9 @@ app.add_middleware(
 def _persist(session_id: str) -> None:
     """Fire-and-forget GCS save — never blocks a response."""
     asyncio.create_task(save_session(session_id, sessions[session_id]))
+
+
+pipeline_manager = PipelineManager(sessions, persist_session=_persist_for_pipeline)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -178,6 +185,61 @@ async def chat(body: ChatRequest):
 
     return StreamingResponse(
         _stream_and_persist(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/run", response_model=RunAcceptedResponse)
+async def run_pipeline(body: RunRequest):
+    if not body.use_demo_cache and not body.pdf_url and not body.gcs_uri:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide pdf_url, gcs_uri, or set use_demo_cache=true.",
+        )
+
+    try:
+        run = await pipeline_manager.start_run(
+            pdf_url=body.pdf_url,
+            gcs_uri=body.gcs_uri,
+            session_id=body.session_id,
+            use_demo_cache=body.use_demo_cache,
+            demo_cache_key=body.demo_cache_key,
+        )
+        run_id = run["run_id"]
+        return RunAcceptedResponse(
+            run_id=run_id,
+            session_id=run["session_id"],
+            status=run["status"],
+            current_node=run["current_node"],
+            poll_url=f"/runs/{run_id}",
+            stream_url=f"/runs/{run_id}/events",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/runs/{run_id}", response_model=RunStatusResponse)
+async def get_run_status(run_id: str):
+    try:
+        run = await pipeline_manager.get_run(run_id)
+        return RunStatusResponse(**run)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+
+@app.get("/runs/{run_id}/events")
+async def stream_run_events(run_id: str):
+    try:
+        await pipeline_manager.get_run(run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    return StreamingResponse(
+        sse_event_stream(pipeline_manager, run_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

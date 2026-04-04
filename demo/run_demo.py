@@ -5,10 +5,19 @@ import time
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# Prefer real local secrets in .env, but fall back to .env.example for hackathon setup.
+dotenv_path = PROJECT_ROOT / ".env"
+dotenv_example_path = PROJECT_ROOT / ".env.example"
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
+elif dotenv_example_path.exists():
+    load_dotenv(dotenv_example_path)
 
 from backend import config
 from backend.demo_cache import load_demo_cache

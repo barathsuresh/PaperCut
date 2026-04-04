@@ -1,20 +1,3 @@
-.venv/
-__pycache__/
-*.pyc
-.env
-gcp-key.json
-.claude/
-*.lock
-.~lock.*
-*.swp
-ArXiv_Agent_Report_v2.docx
-# caches / outputs
-.codex
-demo_cache/*
-!demo_cache/.gitkeep
-!demo_cache/attention_is_all_you_need/
-!demo_cache/attention_is_all_you_need/**
-outputs/
 # Credentials
 .env
 gcp-key.json
@@ -33,10 +16,24 @@ build/
 .mypy_cache/
 .ruff_cache/
 
-# IDE
+# Caches / outputs
+.codex
+demo_cache/*
+!demo_cache/.gitkeep
+!demo_cache/attention_is_all_you_need/
+!demo_cache/attention_is_all_you_need/**
+outputs/
+
+# Workspace / editors
+.claude/
 .idea/
 .vscode/
 *.swp
+*.lock
+.~lock.*
+
+# Project files
+ArXiv_Agent_Report_v2.docx
 
 # OS
 .DS_Store

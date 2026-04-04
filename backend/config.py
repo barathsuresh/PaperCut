@@ -1,7 +1,17 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+dotenv_path = PROJECT_ROOT / ".env"
+dotenv_example_path = PROJECT_ROOT / ".env.example"
+
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
+elif dotenv_example_path.exists():
+    load_dotenv(dotenv_example_path)
+else:
+    load_dotenv()
 
 GCP_PROJECT_ID: str = os.environ.get("GCP_PROJECT_ID", "")
 GCP_BUCKET_NAME: str = os.environ.get("GCP_BUCKET_NAME", "")

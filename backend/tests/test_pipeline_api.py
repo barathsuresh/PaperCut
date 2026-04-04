@@ -1,5 +1,5 @@
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -50,14 +50,17 @@ def test_run_pipeline_live_path(
     mock_node3,
 ):
     mock_upload.return_value = "gs://test-bucket/papers/run-1/paper.pdf"
-    mock_node0.return_value.model_dump.return_value = {
+    mock_node0_response = MagicMock()
+    mock_node0_response.model_dump.return_value = {
         "result": "PASS",
         "reason": "Transformer paper.",
     }
-    mock_node0.return_value.result = "PASS"
-    mock_node0.return_value.reason = "Transformer paper."
+    mock_node0_response.result = "PASS"
+    mock_node0_response.reason = "Transformer paper."
+    mock_node0.return_value = mock_node0_response
 
-    mock_node1.return_value.model_dump.return_value = {
+    mock_blueprint = MagicMock()
+    mock_blueprint.model_dump.return_value = {
         "model_type": "transformer",
         "architecture": {
             "d_model": 512,
@@ -71,6 +74,7 @@ def test_run_pipeline_live_path(
         "key_operations": ["attention"],
         "math_notes": "d_model must be divisible by n_heads",
     }
+    mock_node1.return_value = mock_blueprint
     mock_node2.return_value = {"status": "ok", "output_dir": "outputs/scaffold"}
     mock_node3.return_value = {"status": "ok", "output_dir": "outputs/hw"}
 
@@ -92,4 +96,3 @@ def test_run_pipeline_live_path(
 def test_run_requires_input():
     response = client.post("/run", json={})
     assert response.status_code == 400
-
