@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Architecture Blueprint",
+  "description": "Typed JSON contract produced by Node 1 (Research Ingestor) and consumed by Node 2 (PyTorch Architect). Defines the extracted ML architecture from an ArXiv paper.",
+  "type": "object",
+  "required": ["model_type", "architecture", "objective", "key_operations", "math_notes"],
+  "additionalProperties": false,
+  "properties": {
+    "model_type": {
+      "type": "string",
+      "description": "High-level model family (e.g. transformer, cnn, rnn).",
+      "enum": ["transformer", "cnn", "rnn", "gan", "vae", "diffusion"]
+    },
+    "architecture": {
+      "type": "object",
+      "description": "Extracted architectural hyperparameters.",
+      "required": ["d_model", "n_heads", "n_layers", "d_ff", "vocab_size", "max_seq_len"],
+      "additionalProperties": false,
+      "properties": {
+        "d_model": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Model embedding dimension."
+        },
+        "n_heads": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of attention heads. d_model must be divisible by n_heads."
+        },
+        "n_layers": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of encoder/decoder layers."
+        },
+        "d_ff": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Feed-forward inner dimension."
+        },
+        "vocab_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Vocabulary size for the embedding layer."
+        },
+        "max_seq_len": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum sequence length supported."
+        }
+      }
+    },
+    "objective": {
+      "type": "string",
+      "description": "Training objective / loss function identifier."
+    },
+    "key_operations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "List of mathematically significant operations in the architecture."
+    },
+    "math_notes": {
+      "type": "string",
+      "description": "Free-text notes on dimension constraints and mathematical invariants."
+    }
+  }
+}
