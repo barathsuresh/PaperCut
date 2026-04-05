@@ -21,16 +21,25 @@ build/
 .idea/
 .vscode/
 .claude/
+.codex/
 .codex
 *.swp
-*.lock
 .~lock.*
 
 # OS
 .DS_Store
+Thumbs.db
 
 # Local docs
 ArXiv_Agent_Report_v2.docx
+
+# GCP / cloud SDKs
+google-cloud-sdk/
+google-cloud-cli-*.tar.gz
+
+# Node / frontend
+node_modules/
+.vite/
 
 # Caches / outputs
 demo_cache/
