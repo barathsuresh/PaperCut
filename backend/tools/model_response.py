@@ -10,6 +10,7 @@ import logging
 from typing import Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
+from backend.tools.gemini_client import strip_markdown_fences
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,6 @@ def parse_model_json(text: str | None, schema: Type[T], node_name: str) -> T:
             "(possible safety block or quota exhaustion)"
         )
 
-    from backend.tools.gemini_client import strip_markdown_fences
     cleaned = strip_markdown_fences(text)
 
     if not cleaned:
