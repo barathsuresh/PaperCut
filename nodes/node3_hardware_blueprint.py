@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -238,31 +239,44 @@ def run_node3(
     )
     logger.info("Identified %d bottlenecks", len(bottlenecks))
 
-    # Step 2: Generate annotated CUDA stubs for each bottleneck
-    stub_files: list[str] = []
-    for i, bn in enumerate(bottlenecks):
+    # Step 2: Generate annotated CUDA stubs for each bottleneck (parallel)
+    def _generate_stub(args: tuple[int, dict]) -> tuple[str, str]:
+        i, bn = args
         op_name = bn.get("operation", f"bottleneck_{i}")
         filename = f"{sanitize_filename(op_name)}_stub.cu"
         logger.info("Generating CUDA stub for: %s", op_name)
-
         stub_prompt = _build_cuda_stub_prompt(bn, scaffold_files)
         raw_stub = caller(stub_prompt)
         stub_content = clean_cuda_stub(raw_stub)
-
-        # Validate annotations
         missing = validate_stub_annotations(stub_content)
         if missing:
             logger.warning(
-                "Stub for %s missing annotations: %s. "
-                "Adding placeholder sections.",
+                "Stub for %s missing annotations: %s. Adding placeholder sections.",
                 op_name, missing,
             )
             for section in missing:
                 stub_content += f"\n\n// === {section} ===\n// [TO BE COMPLETED]\n"
+        return filename, stub_content
 
-        (out / filename).write_text(stub_content, encoding="utf-8")
-        stub_files.append(filename)
-        logger.info("Wrote %s", filename)
+    stub_files: list[str] = []
+    results: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=len(bottlenecks)) as pool:
+        futures = {
+            pool.submit(_generate_stub, (i, bn)): i
+            for i, bn in enumerate(bottlenecks)
+        }
+        for future in as_completed(futures):
+            filename, stub_content = future.result()
+            results[filename] = stub_content
+
+    # Write stubs in deterministic order (bottleneck index order)
+    for i, bn in enumerate(bottlenecks):
+        op_name = bn.get("operation", f"bottleneck_{i}")
+        filename = f"{sanitize_filename(op_name)}_stub.cu"
+        if filename in results:
+            (out / filename).write_text(results[filename])
+            stub_files.append(filename)
+            logger.info("Wrote %s", filename)
 
     # Write metadata
     meta = {
