@@ -1,17 +1,17 @@
 import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
 
 const STEPS = [
-  { key: 'node0', label: 'Reading Paper',          runDesc: 'Checking scope and relevance…'          },
-  { key: 'node1', label: 'Analysing Architecture',  runDesc: 'Extracting model blueprint…'            },
-  { key: 'node2', label: 'Building Implementation', runDesc: 'Generating PyTorch code…'               },
-  { key: 'node3', label: 'Designing Accelerators',  runDesc: 'Creating CUDA optimisation stubs…'      },
+  { key: 'node0', label: 'Reading Paper',          runDesc: 'Checking scope and relevance…',      hint: '~10s'  },
+  { key: 'node1', label: 'Analysing Architecture',  runDesc: 'Extracting model blueprint…',        hint: '~30s'  },
+  { key: 'node2', label: 'Building Implementation', runDesc: 'Generating PyTorch code…',           hint: '~1 min' },
+  { key: 'node3', label: 'Designing Accelerators',  runDesc: 'Creating CUDA optimisation stubs…', hint: '~2 min' },
 ]
 
-// Derive clean one-liner from a node_done event
 function stepSummary(key, ev) {
   if (!ev) return ''
   switch (key) {
-    case 'node0': return ev.result === 'PASS' ? 'Paper is in scope' : `Out of scope`
+    case 'node0': return ev.result === 'PASS' ? 'Paper is in scope' : 'Out of scope'
     case 'node1': return ev.model_type ? `Architecture identified: ${ev.model_type}` : 'Blueprint ready'
     case 'node2': {
       const n = Array.isArray(ev.files) ? ev.files.length : Object.keys(ev.files || {}).length
@@ -23,6 +23,23 @@ function stepSummary(key, ev) {
       return `${s} CUDA stub${s !== 1 ? 's' : ''}, ${b} bottleneck${b !== 1 ? 's' : ''} identified`
     }
     default: return ev.message || 'Done'
+  }
+}
+
+function stepDetail(key, ev) {
+  if (!ev) return null
+  switch (key) {
+    case 'node0': return ev.message || null
+    case 'node1': return ev.message || null
+    case 'node2': {
+      const files = Array.isArray(ev.files) ? ev.files : Object.keys(ev.files || {})
+      return files.length ? files.join(', ') : null
+    }
+    case 'node3': {
+      const stubs = ev.stub_files || []
+      return stubs.length ? stubs.join(', ') : null
+    }
+    default: return null
   }
 }
 
@@ -46,9 +63,12 @@ function StepIcon({ status }) {
 
 export default function PipelineProgress({ events, sessionName }) {
   const { states, details } = getStepStates(events)
+  const [expanded, setExpanded] = useState({})
   const doneEvent  = events.find(e => e.type === 'done')
   const errorEvent = events.find(e => e.type === 'error')
   const rejected   = doneEvent && doneEvent.scope_valid === false
+
+  const toggle = key => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
 
   return (
     <div className="pipeline-view">
@@ -56,18 +76,21 @@ export default function PipelineProgress({ events, sessionName }) {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+        style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', alignItems: 'center' }}
       >
         <div className="pipeline-title">{sessionName || 'Analysing paper…'}</div>
         <div className="pipeline-subtitle">
-          {doneEvent && !rejected ? 'Analysis complete' : 'This may take a few minutes'}
+          {doneEvent && !rejected ? 'Analysis complete' : 'Usually takes 2–3 minutes end to end'}
         </div>
 
         <div className="pipeline-steps">
           {STEPS.map((step, i) => {
-            const st  = states[step.key]
-            const det = details[step.key]
+            const st      = states[step.key]
+            const det     = details[step.key]
             const summary = stepSummary(step.key, det)
+            const detail  = stepDetail(step.key, det)
+            const isOpen  = expanded[step.key]
+            const canExpand = (st === 'step-done' || st === 'error') && detail
 
             return (
               <motion.div
@@ -84,8 +107,19 @@ export default function PipelineProgress({ events, sessionName }) {
                   }
                 </div>
 
-                <div className="step-body">
-                  <div className="step-label">{step.label}</div>
+                <div className="step-body" style={{ flex: 1 }}>
+                  <div className="step-label-row">
+                    <span className="step-label">{step.label}</span>
+                    {st === 'running' && (
+                      <span className="step-hint">{step.hint}</span>
+                    )}
+                    {canExpand && (
+                      <button className="step-expand-btn" onClick={() => toggle(step.key)}>
+                        {isOpen ? '▲' : '▼'}
+                      </button>
+                    )}
+                  </div>
+
                   <div className="step-desc">
                     {st === 'running' && (
                       <span style={{ color: 'var(--accent2)' }}>
@@ -102,14 +136,26 @@ export default function PipelineProgress({ events, sessionName }) {
                       </motion.span>
                     )}
                     {st === 'error' && (
-                      <span style={{ color: 'var(--red)' }}>
-                        {det?.message || 'Failed'}
-                      </span>
+                      <span style={{ color: 'var(--red)' }}>{det?.message || 'Failed'}</span>
                     )}
                     {st === 'pending' && (
                       <span style={{ color: 'var(--text3)' }}>Waiting…</span>
                     )}
                   </div>
+
+                  <AnimatePresence>
+                    {isOpen && detail && (
+                      <motion.div
+                        className="step-detail"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        {detail}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             )

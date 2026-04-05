@@ -46,10 +46,10 @@ from backend.schemas.api import (
     UploadResponse,
 )
 from backend.session_store import delete_session as delete_session_blob, load_all_sessions, save_session
-from backend.tools.artifact_store import delete_all_artifacts, download_artifact, upload_artifacts
+from backend.tools.artifact_store import delete_all_artifacts, download_artifact, list_artifacts, upload_artifacts
 from backend.tools.gemini_client import get_flash_model, pdf_part_from_gcs
 from backend.tools.model_response import ModelResponseError
-from backend.tools.pdf_loader import upload_pdf_bytes, upload_pdf_from_url
+from backend.tools.pdf_loader import GCSUnavailableError, upload_pdf_bytes, upload_pdf_from_url
 
 # 50 MB limit for direct file uploads
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -178,19 +178,24 @@ async def _fetch_and_store_title(session_id: str, gcs_uri: str) -> None:
         logger.warning("Could not fetch paper title | session=%s | %s", session_id, e)
 
 
-async def _upload_node_artifacts(session_id: str, result: dict, artifact_group: str) -> None:
-    """Background task: upload generated files to GCS after a node completes."""
+async def _upload_node_artifacts(session_id: str, result: dict, artifact_group: str) -> list[str]:
+    """Upload generated files to GCS and persist uploaded file metadata."""
     output_dir = result.get("output_dir")
     if not output_dir or result.get("status") != "completed":
-        return
+        return []
     local_dir = Path(output_dir)
     if not local_dir.exists():
-        return
+        return []
     uploaded = await upload_artifacts(session_id, local_dir, artifact_group)
+    if uploaded and session_id in sessions:
+        target_key = "node2_result" if artifact_group == "implementation" else "node3_result"
+        sessions[session_id].setdefault(target_key, {})["uploaded_files"] = uploaded
+        await save_session(session_id, sessions[session_id])
     logger.info(
         "Artifact upload done | session=%s group=%s files=%s",
         session_id, artifact_group, uploaded,
     )
+    return uploaded
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -265,11 +270,31 @@ async def get_session_artifacts(session_id: str):
     data = sessions[session_id]
     node2 = data.get("node2_result") or {}
     node3 = data.get("node3_result") or {}
+    implementation_files = sorted((node2.get("files") or {}).keys())
+    acceleration_files = sorted(node3.get("stub_files") or [])
+
+    if not implementation_files:
+        implementation_files = await list_artifacts(session_id, "implementation")
+    if not acceleration_files:
+        acceleration_files = await list_artifacts(session_id, "acceleration")
+
     return SessionArtifactsResponse(
         session_id=session_id,
-        implementation_files=sorted((node2.get("files") or {}).keys()),
-        acceleration_files=sorted(node3.get("stub_files") or []),
+        implementation_files=implementation_files,
+        acceleration_files=acceleration_files,
     )
+
+
+@app.patch("/sessions/{session_id}/name")
+async def rename_session_endpoint(session_id: str, body: dict):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    name = (body.get("name") or "").strip()[:160]
+    if not name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty.")
+    sessions[session_id]["name"] = name
+    _persist(session_id)
+    return {"session_id": session_id, "name": name}
 
 
 @app.delete("/sessions/{session_id}", response_model=DeleteResponse)
@@ -393,6 +418,11 @@ async def upload(
         )
     except httpx.RequestError as e:
         raise HTTPException(status_code=422, detail=f"Could not reach PDF URL: {e}")
+    except GCSUnavailableError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{e} Check Google credentials, network access, and GCS reachability.",
+        )
     except ValueError as e:
         # Raised by pdf_loader for size/content-type violations
         raise HTTPException(status_code=422, detail=str(e))
@@ -499,11 +529,11 @@ async def run_node2_endpoint(body: NodeRunRequest):
         )
 
     try:
-        result = await asyncio.to_thread(run_node2, sessions[session_id]["node1_result"])
+        result = await asyncio.to_thread(run_node2, sessions[session_id]["node1_result"], session_id)
         sessions[session_id]["node2_result"] = result
         await save_session(session_id, sessions[session_id])
         if result.get("status") == "completed":
-            asyncio.create_task(_upload_node_artifacts(session_id, result, "implementation"))
+            await _upload_node_artifacts(session_id, result, "implementation")
         logger.info("Node2 endpoint done | session=%s | status=%s", session_id, result.get("status"))
         if result.get("status") == "error":
             error_type = result.get("error_type", "")
@@ -534,11 +564,11 @@ async def run_node3_endpoint(body: NodeRunRequest):
 
     try:
         # Pass node2_result so Node 3 can locate the correct scaffold directory
-        result = await asyncio.to_thread(run_node3, sessions[session_id]["node2_result"])
+        result = await asyncio.to_thread(run_node3, sessions[session_id]["node2_result"], session_id)
         sessions[session_id]["node3_result"] = result
         await save_session(session_id, sessions[session_id])
         if result.get("status") == "completed":
-            asyncio.create_task(_upload_node_artifacts(session_id, result, "acceleration"))
+            await _upload_node_artifacts(session_id, result, "acceleration")
         logger.info("Node3 endpoint done | session=%s | status=%s", session_id, result.get("status"))
         if result.get("status") == "error":
             error_type = result.get("error_type", "")
@@ -664,7 +694,7 @@ async def run_pipeline_stream(body: NodeRunRequest):
         # ── Node 2 ────────────────────────────────────────────────────────────
         yield _sse("node_start", {"node": "node2", "message": "Generating PyTorch scaffold..."})
         try:
-            scaffold = await asyncio.to_thread(run_node2, blueprint.model_dump())
+            scaffold = await asyncio.to_thread(run_node2, blueprint.model_dump(), session_id)
             sessions[session_id]["node2_result"] = scaffold
             asyncio.create_task(save_session(session_id, sessions[session_id]))
 
@@ -674,7 +704,7 @@ async def run_pipeline_stream(body: NodeRunRequest):
                     "message": scaffold.get("error", "Node 2 failed."),
                 })
             else:
-                asyncio.create_task(_upload_node_artifacts(session_id, scaffold, "implementation"))
+                await _upload_node_artifacts(session_id, scaffold, "implementation")
                 files = list((scaffold.get("files") or {}).keys())
                 yield _sse("node_done", {
                     "node": "node2",
@@ -690,7 +720,7 @@ async def run_pipeline_stream(body: NodeRunRequest):
         # ── Node 3 ────────────────────────────────────────────────────────────
         yield _sse("node_start", {"node": "node3", "message": "Generating CUDA hardware blueprint..."})
         try:
-            cuda = await asyncio.to_thread(run_node3, scaffold)
+            cuda = await asyncio.to_thread(run_node3, scaffold, session_id)
             sessions[session_id]["node3_result"] = cuda
             asyncio.create_task(save_session(session_id, sessions[session_id]))
 
@@ -700,7 +730,7 @@ async def run_pipeline_stream(body: NodeRunRequest):
                     "message": cuda.get("error", "Node 3 failed."),
                 })
             else:
-                asyncio.create_task(_upload_node_artifacts(session_id, cuda, "acceleration"))
+                await _upload_node_artifacts(session_id, cuda, "acceleration")
                 stubs = cuda.get("stub_files") or []
                 bottlenecks = cuda.get("bottlenecks") or []
                 yield _sse("node_done", {
@@ -864,7 +894,7 @@ async def chat(body: ChatRequest):
     async def _stream_and_persist() -> AsyncGenerator[str, None]:
         accumulated: list[str] = []
         had_error = False
-        async for chunk in stream_chat(sessions[session_id], message):
+        async for chunk in stream_chat(session_id, sessions[session_id], message):
             yield chunk
             try:
                 data = json.loads(chunk[6:].strip())  # strip "data: "

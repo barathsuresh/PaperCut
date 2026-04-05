@@ -11,8 +11,16 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
+_OUTPUTS_ROOT = Path(__file__).resolve().parent.parent.parent / "outputs" / "sessions"
 
-def run_node2(research_contract: Dict[str, Any]) -> Dict[str, Any]:
+
+def _node2_output_dir(session_id: str | None) -> Path:
+    if session_id:
+        return _OUTPUTS_ROOT / session_id / "pytorch_scaffold"
+    return Path(__file__).resolve().parent.parent.parent / "outputs" / "pytorch_scaffold"
+
+
+def run_node2(research_contract: Dict[str, Any], session_id: str | None = None) -> Dict[str, Any]:
     """
     Generate a PyTorch scaffold from an architecture blueprint dict.
 
@@ -29,7 +37,11 @@ def run_node2(research_contract: Dict[str, Any]) -> Dict[str, Any]:
             tmp_path = Path(tmp.name)
 
         caller = make_nat_caller_code()
-        output_dir = _real_run_node2(blueprint_path=tmp_path, nat_caller=caller)
+        output_dir = _real_run_node2(
+            blueprint_path=tmp_path,
+            output_dir=_node2_output_dir(session_id),
+            nat_caller=caller,
+        )
 
         if not output_dir.exists():
             raise FileNotFoundError(

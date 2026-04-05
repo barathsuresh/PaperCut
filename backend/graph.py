@@ -45,7 +45,11 @@ async def _node1(state: AgentState) -> dict:
 async def _node2(state: AgentState) -> dict:
     logger.info("Graph — entering node2")
     blueprint = state.get("blueprint")
-    result = await asyncio.to_thread(run_node2, blueprint.model_dump() if blueprint else {})
+    result = await asyncio.to_thread(
+        run_node2,
+        blueprint.model_dump() if blueprint else {},
+        state.get("session_id"),
+    )
     logger.info("Graph — node2 done | status=%s", result.get("status"))
     return {"scaffold_code": result}
 
@@ -54,7 +58,7 @@ async def _node3(state: AgentState) -> dict:
     logger.info("Graph — entering node3")
     # Pass scaffold_code (node2 result) so node3 can locate the correct output_dir
     node2_result = state.get("scaffold_code") or {}
-    result = await asyncio.to_thread(run_node3, node2_result)
+    result = await asyncio.to_thread(run_node3, node2_result, state.get("session_id"))
     logger.info("Graph — node3 done | status=%s", result.get("status"))
     return {"cuda_blueprint": result}
 

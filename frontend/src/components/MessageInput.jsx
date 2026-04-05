@@ -10,6 +10,8 @@ export default function MessageInput({ onSend, disabled }) {
     setText('')
     ref.current.style.height = 'auto'
     onSend(msg)
+    // Re-focus after React flushes the state update
+    setTimeout(() => ref.current?.focus(), 0)
   }
 
   const onKey = e => {

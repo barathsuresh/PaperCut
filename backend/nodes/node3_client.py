@@ -10,8 +10,18 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
+_OUTPUTS_ROOT = Path(__file__).resolve().parent.parent.parent / "outputs" / "sessions"
 
-def run_node3(node2_result: Dict[str, Any]) -> Dict[str, Any]:
+
+def _node3_output_dir(session_id: str | None, scaffold_dir: Path | None) -> Path:
+    if session_id:
+        return _OUTPUTS_ROOT / session_id / "hardware_blueprint"
+    if scaffold_dir is not None:
+        return scaffold_dir.parent / "hardware_blueprint"
+    return Path(__file__).resolve().parent.parent.parent / "outputs" / "hardware_blueprint"
+
+
+def run_node3(node2_result: Dict[str, Any], session_id: str | None = None) -> Dict[str, Any]:
     """
     Generate annotated CUDA C++ stubs from the Node 2 PyTorch scaffold.
 
@@ -44,7 +54,11 @@ def run_node3(node2_result: Dict[str, Any]) -> Dict[str, Any]:
         output_dir = None
         for attempt in range(_MAX_NODE3_RETRIES + 1):
             try:
-                output_dir = _real_run_node3(scaffold_dir=scaffold_dir, nat_caller=caller)
+                output_dir = _real_run_node3(
+                    scaffold_dir=scaffold_dir,
+                    output_dir=_node3_output_dir(session_id, scaffold_dir),
+                    nat_caller=caller,
+                )
                 break
             except NATError as e:
                 last_nat_error = e

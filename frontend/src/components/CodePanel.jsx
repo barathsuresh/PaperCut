@@ -35,12 +35,18 @@ const GROUP_CONFIG = {
   acceleration:   { label: 'Accelerators',   color: '#34d399' },
 }
 
-export default function CodePanel({ open, artifacts, activeFile, onSelectFile, onClose, loadingFile, fileContent }) {
-  const [copied, setCopied] = useState(false)
-  const [width, setWidth] = useState(560)
+
+export default function CodePanel({
+  open, artifacts, activeFile, onSelectFile, onClose,
+  loadingFile, fileContent, fileError,
+}) {
+  const [copied,   setCopied]   = useState(false)
+  const [wrap,     setWrap]     = useState(false)
+  const [fontSize, setFontSize] = useState(12.5)
+  const [width,    setWidth]    = useState(560)
   const dragging = useRef(false)
-  const startX = useRef(0)
-  const startW = useRef(0)
+  const startX   = useRef(0)
+  const startW   = useRef(0)
 
   const onDragStart = useCallback(e => {
     dragging.current = true
@@ -86,6 +92,7 @@ export default function CodePanel({ open, artifacts, activeFile, onSelectFile, o
     >
       {/* Resize handle */}
       <div className="code-panel-resize-handle" onMouseDown={onDragStart} />
+
       {/* File tree */}
       <div className="code-tree">
         <div className="code-tree-header">
@@ -133,13 +140,23 @@ export default function CodePanel({ open, artifacts, activeFile, onSelectFile, o
       {/* Code area */}
       <div className="code-panel-body">
         {loadingFile && (
-          <div className="code-panel-center"><span className="loader" /></div>
+          <div className="code-panel-center">
+            <span className="loader" />
+          </div>
         )}
 
-        {!loadingFile && !fileContent && (
-          <div className="code-panel-center" style={{ flexDirection: 'column', gap: 10, color: 'var(--text3)', fontSize: 13 }}>
-            <span style={{ fontSize: 28, opacity: 0.15 }}>{'</>'}</span>
-            Select a file
+        {!loadingFile && fileError && (
+          <div className="code-panel-center" style={{ flexDirection: 'column', gap: 12 }}>
+            <span style={{ fontSize: 26, opacity: 0.4 }}>⚠</span>
+            <span style={{ color: 'var(--red)', fontSize: 13 }}>Could not load file</span>
+            <span style={{ color: 'var(--text3)', fontSize: 11, maxWidth: 200, textAlign: 'center' }}>{fileError}</span>
+          </div>
+        )}
+
+        {!loadingFile && !fileError && !fileContent && (
+          <div className="code-panel-center" style={{ flexDirection: 'column', gap: 10 }}>
+            <span style={{ fontSize: 32 }}>{'</>'}</span>
+            <span style={{ fontSize: 13 }}>Select a file from the tree</span>
           </div>
         )}
 
@@ -147,16 +164,43 @@ export default function CodePanel({ open, artifacts, activeFile, onSelectFile, o
           <div style={{ position: 'relative', height: '100%', overflow: 'auto' }}>
             <div className="code-panel-topbar">
               <span className="code-panel-filename">{fileContent.file_name}</span>
-              <button className="code-panel-copy-btn" onClick={handleCopy}>
-                {copied ? '✓ Copied' : 'Copy'}
-              </button>
+              <div className="code-panel-controls">
+                <button
+                  className={`code-ctrl-btn${wrap ? ' active' : ''}`}
+                  onClick={() => setWrap(w => !w)}
+                  title="Toggle line wrap"
+                >⏎</button>
+                <button
+                  className="code-ctrl-btn"
+                  onClick={() => setFontSize(s => Math.max(10, s - 1))}
+                  title="Decrease font size"
+                >A-</button>
+                <button
+                  className="code-ctrl-btn"
+                  onClick={() => setFontSize(s => Math.min(18, s + 1))}
+                  title="Increase font size"
+                >A+</button>
+                <button className="code-panel-copy-btn" onClick={handleCopy}>
+                  {copied ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
             </div>
             <SyntaxHighlighter
               language={LANG_MAP[ext(fileContent.file_name)] || 'text'}
-              style={codeStyle}
+              style={{
+                ...codeStyle,
+                'pre[class*="language-"]': {
+                  ...codeStyle['pre[class*="language-"]'],
+                  fontSize: `${fontSize}px`,
+                },
+                'code[class*="language-"]': {
+                  ...codeStyle['code[class*="language-"]'],
+                  fontSize: `${fontSize}px`,
+                },
+              }}
               showLineNumbers
               lineNumberStyle={{ color: 'var(--text3)', fontSize: '11px', minWidth: '2.5em' }}
-              wrapLongLines={false}
+              wrapLongLines={wrap}
             >
               {fileContent.content}
             </SyntaxHighlighter>

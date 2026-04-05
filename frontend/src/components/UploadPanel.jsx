@@ -1,18 +1,29 @@
 import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 
+// Convert arxiv abstract URL → PDF URL
+function normalizeArxivUrl(raw) {
+  const url = raw.trim()
+  // Already a PDF link
+  if (/arxiv\.org\/pdf\//i.test(url)) return url
+  // Abstract link: arxiv.org/abs/XXXX → arxiv.org/pdf/XXXX
+  const absMatch = url.match(/arxiv\.org\/abs\/([\w.]+)/i)
+  if (absMatch) return `https://arxiv.org/pdf/${absMatch[1]}`
+  return url
+}
+
 export default function UploadPanel({ onSubmit, loading }) {
-  const [tab, setTab] = useState('url')
-  const [url, setUrl]     = useState('')
-  const [file, setFile]   = useState(null)
-  const [drag, setDrag]   = useState(false)
+  const [tab, setTab]   = useState('url')
+  const [url, setUrl]   = useState('')
+  const [file, setFile] = useState(null)
+  const [drag, setDrag] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef()
 
   const handleDrop = e => {
     e.preventDefault(); setDrag(false)
     const f = e.dataTransfer.files[0]
-    if (f && f.type === 'application/pdf') { setFile(f); setError('') }
+    if (f && f.type === 'application/pdf') { setFile(f); setTab('file'); setError('') }
     else setError('Please drop a PDF file.')
   }
 
@@ -21,18 +32,27 @@ export default function UploadPanel({ onSubmit, loading }) {
     if (f) { setFile(f); setError('') }
   }
 
+  const handleUrlChange = e => {
+    const val = e.target.value
+    setUrl(val)
+    setError('')
+  }
+
   const handleSubmit = async () => {
     setError('')
     if (tab === 'url' && !url.trim()) { setError('Please enter a URL.'); return }
     if (tab === 'file' && !file)      { setError('Please select a PDF.'); return }
 
     const fd = new FormData()
-    if (tab === 'url') fd.append('pdf_url', url.trim())
+    if (tab === 'url') fd.append('pdf_url', normalizeArxivUrl(url))
     else               fd.append('file', file)
 
     try { await onSubmit(fd) }
     catch (e) { setError(e.message) }
   }
+
+  // Detect if pasted text is an arxiv URL and show hint
+  const isAbstractUrl = /arxiv\.org\/abs\//i.test(url)
 
   return (
     <div className="upload-panel">
@@ -53,15 +73,26 @@ export default function UploadPanel({ onSubmit, loading }) {
         </div>
 
         {tab === 'url' ? (
-          <input
-            className="upload-input"
-            type="url"
-            placeholder="https://arxiv.org/pdf/2307.09288"
-            value={url}
-            onChange={e => { setUrl(e.target.value); setError('') }}
-            onKeyDown={e => e.key === 'Enter' && !loading && handleSubmit()}
-            autoFocus
-          />
+          <>
+            <input
+              className="upload-input"
+              type="url"
+              placeholder="https://arxiv.org/abs/2307.09288  or  /pdf/…"
+              value={url}
+              onChange={handleUrlChange}
+              onKeyDown={e => e.key === 'Enter' && !loading && handleSubmit()}
+              autoFocus
+            />
+            {isAbstractUrl && (
+              <motion.div
+                className="upload-url-hint"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                ✓ ArXiv abstract detected — will use PDF version automatically
+              </motion.div>
+            )}
+          </>
         ) : (
           <>
             <div

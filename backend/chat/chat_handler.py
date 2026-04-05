@@ -8,6 +8,7 @@ from google.api_core.exceptions import GoogleAPICallError
 from google.genai.errors import ClientError as GeminiClientError
 
 from backend.tools.gemini_client import get_pro_model
+from backend.tools.artifact_store import download_artifact
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,32 @@ def _read_file_sync(path: Path) -> str:
         return ""
 
 
-async def _build_context(session_data: Dict[str, Any]) -> str:
+def _truncate_text(text: str) -> str:
+    if len(text) > _MAX_FILE_CHARS:
+        return text[:_MAX_FILE_CHARS] + f"\n... [truncated, {len(text)} chars total]"
+    return text
+
+
+async def _load_artifact_text(
+    session_id: str,
+    artifact_group: str,
+    file_name: str,
+    output_dir: Path | None = None,
+) -> str:
+    content = await download_artifact(session_id, artifact_group, file_name)
+    if content:
+        return _truncate_text(content)
+
+    if output_dir is None:
+        return ""
+
+    fpath = output_dir / file_name
+    if fpath.exists():
+        return await asyncio.to_thread(_read_file_sync, fpath)
+    return ""
+
+
+async def _build_context(session_id: str, session_data: Dict[str, Any]) -> str:
     context_parts = []
 
     # --- Node 1: architecture blueprint ---
@@ -54,14 +80,12 @@ async def _build_context(session_data: Dict[str, Any]) -> str:
     # --- Node 2: actual generated PyTorch code ---
     node2_result = session_data.get("node2_result")
     if node2_result and node2_result.get("status") == "completed":
-        output_dir = Path(node2_result["output_dir"])
+        output_dir = Path(node2_result["output_dir"]) if node2_result.get("output_dir") else None
         scaffold_parts = []
         for fname in _SCAFFOLD_FILES:
-            fpath = output_dir / fname
-            if fpath.exists():
-                content = await asyncio.to_thread(_read_file_sync, fpath)
-                if content:
-                    scaffold_parts.append(f"### {fname}\n```\n{content}\n```")
+            content = await _load_artifact_text(session_id, "implementation", fname, output_dir)
+            if content:
+                scaffold_parts.append(f"### {fname}\n```\n{content}\n```")
         if scaffold_parts:
             context_parts.append("Generated PyTorch Scaffold:\n" + "\n\n".join(scaffold_parts))
             logger.debug("Chat context — included %d scaffold files", len(scaffold_parts))
@@ -69,7 +93,7 @@ async def _build_context(session_data: Dict[str, Any]) -> str:
     # --- Node 3: CUDA stubs + bottleneck analysis ---
     node3_result = session_data.get("node3_result")
     if node3_result and node3_result.get("status") == "completed":
-        output_dir = Path(node3_result["output_dir"])
+        output_dir = Path(node3_result["output_dir"]) if node3_result.get("output_dir") else None
         cuda_parts = []
 
         # Bottleneck summary
@@ -81,11 +105,9 @@ async def _build_context(session_data: Dict[str, Any]) -> str:
 
         # CUDA stub files
         for fname in node3_result.get("stub_files", []):
-            fpath = output_dir / fname
-            if fpath.exists():
-                content = await asyncio.to_thread(_read_file_sync, fpath)
-                if content:
-                    cuda_parts.append(f"### {fname}\n```cuda\n{content}\n```")
+            content = await _load_artifact_text(session_id, "acceleration", fname, output_dir)
+            if content:
+                cuda_parts.append(f"### {fname}\n```cuda\n{content}\n```")
 
         if cuda_parts:
             context_parts.append("Generated CUDA Stubs:\n" + "\n\n".join(cuda_parts))
@@ -115,7 +137,7 @@ def _sse(data: dict) -> str:
 
 
 async def stream_chat(
-    session_data: Dict[str, Any], message: str
+    session_id: str, session_data: Dict[str, Any], message: str
 ) -> AsyncGenerator[str, None]:
     history = session_data.get("history", [])
     context_keys = [k for k in ("node1_result", "node2_result", "node3_result") if session_data.get(k)]
@@ -129,7 +151,7 @@ async def stream_chat(
     yield _sse({"type": "status", "text": "Thinking..."})
     await asyncio.sleep(0)
 
-    context = await _build_context(session_data)
+    context = await _build_context(session_id, session_data)
     history_block = _build_history_block(history)
 
     yield _sse({"type": "status", "text": "Reading paper context..."})

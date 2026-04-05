@@ -21,7 +21,6 @@ const codeStyle = {
   },
 }
 
-// Cycles . → .. → ... independently of the status text
 function AnimatedDots() {
   const [dots, setDots] = useState('.')
   useEffect(() => {
@@ -51,6 +50,15 @@ const components = {
 
 export default function ChatMessage({ role, text, streaming, statusText }) {
   const isUser = role === 'user'
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
+    })
+  }
 
   return (
     <motion.div
@@ -63,34 +71,44 @@ export default function ChatMessage({ role, text, streaming, statusText }) {
         {isUser ? 'U' : '∂'}
       </div>
 
-      <div className="msg-bubble">
-        {statusText ? (
-          /* Each new status text slides in; AnimatedDots cycles independently */
-          <AnimatePresence mode="popLayout">
-            <motion.span
-              key={statusText}
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.18 }}
-              style={{ color: 'var(--text3)', fontStyle: 'italic', fontSize: 13, display: 'inline-flex', alignItems: 'baseline', gap: 1 }}
-            >
-              {/* Strip trailing dots from backend string — we animate our own */}
-              {statusText.replace(/\.+$/, '')}
-              <AnimatedDots />
-            </motion.span>
-          </AnimatePresence>
-        ) : streaming ? (
-          <>
+      <div className="msg-bubble-wrap">
+        <div className="msg-bubble">
+          {statusText ? (
+            <AnimatePresence mode="popLayout">
+              <motion.span
+                key={statusText}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.18 }}
+                style={{ color: 'var(--text3)', fontStyle: 'italic', fontSize: 13, display: 'inline-flex', alignItems: 'baseline', gap: 1 }}
+              >
+                {statusText.replace(/\.+$/, '')}
+                <AnimatedDots />
+              </motion.span>
+            </AnimatePresence>
+          ) : streaming ? (
+            <>
+              <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
+              <span style={{ animation: 'blink 0.85s ease-in-out infinite', color: 'var(--accent2)' }}>_</span>
+            </>
+          ) : isUser ? (
             <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
-            <span style={{ animation: 'blink 0.85s ease-in-out infinite', color: 'var(--accent2)' }}>_</span>
-          </>
-        ) : isUser ? (
-          <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
-        ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-            {text}
-          </ReactMarkdown>
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+              {text}
+            </ReactMarkdown>
+          )}
+        </div>
+
+        {/* Copy button — only for completed assistant messages */}
+        {!isUser && !streaming && !statusText && text && (
+          <button className="msg-copy-btn" onClick={handleCopy} title="Copy message">
+            {copied
+              ? <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7l3.5 3.5L12 3" stroke="var(--green)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              : <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="5" y="1" width="8" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M1 4v8.5A1.5 1.5 0 002.5 14H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+            }
+          </button>
         )}
       </div>
     </motion.div>
