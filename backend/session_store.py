@@ -7,12 +7,12 @@ offloaded to a thread pool via asyncio.to_thread so they never block the event l
 import asyncio
 import json
 import logging
-from typing import Any, Dict
 
-from google.auth.exceptions import RefreshError, TransportError as GoogleAuthTransportError
 from google.cloud import storage
 
 from backend import config
+from backend.schemas.session import SessionData, SessionStore
+from backend.tools.gcs_utils import is_gcs_transport_error
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +20,6 @@ _SESSION_PREFIX = "sessions/"
 
 # Module-level singleton — avoids re-initialising credentials on every GCS call
 _gcs_client: storage.Client | None = None
-
-
-def _is_gcs_transport_error(exc: Exception) -> bool:
-    return isinstance(exc, (GoogleAuthTransportError, RefreshError))
-
 
 def _get_storage_client() -> storage.Client:
     global _gcs_client
@@ -53,11 +48,11 @@ def _upload_json(blob_name: str, data: dict) -> None:
 
 # ── public async API ──────────────────────────────────────────────────────────
 
-async def load_all_sessions() -> Dict[str, Dict[str, Any]]:
+async def load_all_sessions() -> SessionStore:
     """Load all persisted sessions from GCS at startup. Returns empty dict on any error."""
     try:
         blobs = await asyncio.to_thread(_list_session_blobs)
-        sessions: Dict[str, Dict[str, Any]] = {}
+        sessions: SessionStore = {}
         for blob in blobs:
             session_id = blob.name.removeprefix(_SESSION_PREFIX).removesuffix(".json")
             if not session_id:
@@ -68,14 +63,14 @@ async def load_all_sessions() -> Dict[str, Dict[str, Any]]:
             except json.JSONDecodeError as e:
                 logger.warning("Corrupt session blob %s — skipping: %s", session_id, e)
             except Exception as e:
-                if _is_gcs_transport_error(e):
+                if is_gcs_transport_error(e):
                     logger.warning("GCS auth transport error while loading session %s: %s", session_id, e)
                 else:
                     logger.warning("Could not load session %s: %s", session_id, e)
         logger.info("Loaded %d session(s) from GCS.", len(sessions))
         return sessions
     except Exception as e:
-        if _is_gcs_transport_error(e):
+        if is_gcs_transport_error(e):
             logger.warning("GCS auth transport error while listing sessions: %s", e)
         else:
             logger.warning("Could not load sessions from GCS: %s", e)
@@ -94,13 +89,13 @@ async def delete_session(session_id: str) -> None:
         await asyncio.to_thread(_delete_blob, blob_name)
         logger.info("Session blob deleted | session=%s", session_id)
     except Exception as e:
-        if _is_gcs_transport_error(e):
+        if is_gcs_transport_error(e):
             logger.warning("GCS auth transport error while deleting session blob | session=%s | %s", session_id, e)
         else:
             logger.warning("Could not delete session blob | session=%s | %s", session_id, e)
 
 
-async def save_session(session_id: str, data: dict, _retries: int = 2) -> None:
+async def save_session(session_id: str, data: SessionData, _retries: int = 2) -> None:
     """Persist a single session to GCS with up to *_retries* retry attempts."""
     blob_name = f"{_SESSION_PREFIX}{session_id}.json"
     for attempt in range(1, _retries + 2):
@@ -119,7 +114,7 @@ async def save_session(session_id: str, data: dict, _retries: int = 2) -> None:
                 )
                 await asyncio.sleep(wait)
             else:
-                if _is_gcs_transport_error(e):
+                if is_gcs_transport_error(e):
                     logger.error(
                         "Session persist failed after %d attempts due to GCS auth transport timeout | session=%s | %s",
                         _retries + 1, session_id, e,

@@ -2,11 +2,12 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List
+from typing import AsyncGenerator
 
 from google.api_core.exceptions import GoogleAPICallError
 from google.genai.errors import ClientError as GeminiClientError
 
+from backend.schemas.session import SessionData
 from backend.tools.gemini_client import get_pro_model
 from backend.tools.artifact_store import download_artifact
 
@@ -67,7 +68,7 @@ async def _load_artifact_text(
     return ""
 
 
-async def _build_context(session_id: str, session_data: Dict[str, Any]) -> str:
+async def _build_context(session_id: str, session_data: SessionData) -> str:
     context_parts = []
 
     # --- Node 1: architecture blueprint ---
@@ -116,7 +117,7 @@ async def _build_context(session_id: str, session_data: Dict[str, Any]) -> str:
     return "\n\n".join(context_parts)
 
 
-def _build_history_block(history: List[Dict[str, str]]) -> str:
+def _build_history_block(history: list[dict[str, str]]) -> str:
     if not history:
         return ""
     pairs = history[-_MAX_HISTORY_PAIRS * 2:]
@@ -137,7 +138,7 @@ def _sse(data: dict) -> str:
 
 
 async def stream_chat(
-    session_id: str, session_data: Dict[str, Any], message: str
+    session_id: str, session_data: SessionData, message: str
 ) -> AsyncGenerator[str, None]:
     history = session_data.get("history", [])
     context_keys = [k for k in ("node1_result", "node2_result", "node3_result") if session_data.get(k)]

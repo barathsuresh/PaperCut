@@ -12,10 +12,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from google.auth.exceptions import RefreshError, TransportError as GoogleAuthTransportError
 from google.cloud import storage
 
 from backend import config
+from backend.tools.gcs_utils import is_gcs_transport_error
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +23,6 @@ _GCS_PREFIX_MAP = {
     "implementation": "scaffold",
     "acceleration":   "hardware",
 }
-
-
-def _is_gcs_transport_error(exc: Exception) -> bool:
-    return isinstance(exc, (GoogleAuthTransportError, RefreshError))
-
 
 def _get_client() -> storage.Client:
     return storage.Client()
@@ -100,7 +95,7 @@ async def upload_artifacts(session_id: str, local_dir: Path, artifact_group: str
     try:
         return await asyncio.to_thread(_upload_dir_sync, session_id, local_dir, gcs_prefix)
     except Exception as e:
-        if _is_gcs_transport_error(e):
+        if is_gcs_transport_error(e):
             logger.error(
                 "Artifact upload failed due to GCS auth transport timeout | session=%s group=%s | %s",
                 session_id, artifact_group, e,
@@ -116,7 +111,7 @@ async def download_artifact(session_id: str, artifact_group: str, filename: str)
     try:
         return await asyncio.to_thread(_download_blob_sync, session_id, gcs_prefix, filename)
     except Exception as e:
-        if _is_gcs_transport_error(e):
+        if is_gcs_transport_error(e):
             logger.error(
                 "Artifact download failed due to GCS auth transport timeout | session=%s file=%s | %s",
                 session_id, filename, e,
@@ -132,7 +127,7 @@ async def list_artifacts(session_id: str, artifact_group: str) -> list[str]:
     try:
         return await asyncio.to_thread(_list_artifacts_sync, session_id, gcs_prefix)
     except Exception as e:
-        if _is_gcs_transport_error(e):
+        if is_gcs_transport_error(e):
             logger.error(
                 "Artifact listing failed due to GCS auth transport timeout | session=%s group=%s | %s",
                 session_id, artifact_group, e,
@@ -147,7 +142,7 @@ async def delete_all_artifacts(session_id: str) -> int:
     try:
         return await asyncio.to_thread(_delete_prefix_sync, session_id)
     except Exception as e:
-        if _is_gcs_transport_error(e):
+        if is_gcs_transport_error(e):
             logger.error("GCS delete failed due to auth transport timeout | session=%s | %s", session_id, e)
         else:
             logger.error("GCS delete failed | session=%s | %s", session_id, e)
