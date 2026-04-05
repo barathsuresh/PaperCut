@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import httpx
+from google.auth.exceptions import RefreshError, TransportError as GoogleAuthTransportError
 from google.cloud import storage
 
 from backend import config
@@ -9,6 +10,10 @@ from backend import config
 logger = logging.getLogger(__name__)
 
 MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+class GCSUnavailableError(RuntimeError):
+    """Raised when GCS cannot be reached or auth token refresh fails."""
 
 
 def _is_pdf(data: bytes) -> bool:
@@ -54,7 +59,16 @@ async def upload_pdf_bytes(pdf_bytes: bytes, session_id: str) -> str:
     """Upload PDF bytes to GCS. Returns GCS URI."""
     size_kb = len(pdf_bytes) / 1024
     logger.info("Uploading PDF to GCS | session=%s | size=%.1f KB", session_id, size_kb)
-    gcs_uri = await asyncio.to_thread(_gcs_upload_sync, pdf_bytes, session_id)
+    try:
+        gcs_uri = await asyncio.to_thread(_gcs_upload_sync, pdf_bytes, session_id)
+    except (GoogleAuthTransportError, RefreshError) as exc:
+        logger.error("GCS auth transport error | session=%s | %s", session_id, exc)
+        raise GCSUnavailableError(
+            "Google Cloud authentication timed out while uploading the PDF."
+        ) from exc
+    except Exception as exc:
+        logger.error("GCS upload failed | session=%s | %s", session_id, exc, exc_info=True)
+        raise
     logger.info("PDF uploaded | session=%s | uri=%s", session_id, gcs_uri)
     return gcs_uri
 

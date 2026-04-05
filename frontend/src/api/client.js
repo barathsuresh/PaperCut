@@ -13,7 +13,12 @@ export const getSessions = () => fetch(`${BASE}/sessions`).then(json)
 export const getSession  = id => fetch(`${BASE}/sessions/${id}`).then(json)
 export const getHistory  = id => fetch(`${BASE}/sessions/${id}/history`).then(json)
 export const getArtifacts = id => fetch(`${BASE}/sessions/${id}/artifacts`).then(json)
-export const deleteSession = id => fetch(`${BASE}/sessions/${id}`, { method: 'DELETE' }).then(json)
+export const deleteSession  = id => fetch(`${BASE}/sessions/${id}`, { method: 'DELETE' }).then(json)
+export const renameSession  = (id, name) => fetch(`${BASE}/sessions/${id}/name`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name }),
+}).then(json)
 export const getArtifactContent = (id, group, file) =>
   fetch(`${BASE}/sessions/${id}/artifacts/${group}/${encodeURIComponent(file)}`).then(json)
 
