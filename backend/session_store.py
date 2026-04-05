@@ -71,6 +71,21 @@ async def load_all_sessions() -> Dict[str, Dict[str, Any]]:
         return {}
 
 
+def _delete_blob(blob_name: str) -> None:
+    blob = _get_storage_client().bucket(config.GCP_BUCKET_NAME).blob(blob_name)
+    blob.delete()
+
+
+async def delete_session(session_id: str) -> None:
+    """Delete the session JSON blob from GCS."""
+    blob_name = f"{_SESSION_PREFIX}{session_id}.json"
+    try:
+        await asyncio.to_thread(_delete_blob, blob_name)
+        logger.info("Session blob deleted | session=%s", session_id)
+    except Exception as e:
+        logger.warning("Could not delete session blob | session=%s | %s", session_id, e)
+
+
 async def save_session(session_id: str, data: dict, _retries: int = 2) -> None:
     """Persist a single session to GCS with up to *_retries* retry attempts."""
     blob_name = f"{_SESSION_PREFIX}{session_id}.json"
