@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel
 
 from backend.schemas.contract import ArchitectureBlueprint
@@ -73,3 +73,51 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+
+
+class DeleteResponse(BaseModel):
+    session_id: str
+    deleted: bool
+    message: str
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    name: str
+    uploaded_at: Optional[str] = None
+    scope_valid: Optional[bool] = None
+    model_type: Optional[str] = None
+    node2_status: Optional[str] = None
+    node3_status: Optional[str] = None
+
+
+class SessionDetail(BaseModel):
+    session_id: str
+    name: str
+    gcs_uri: str
+    uploaded_at: Optional[str] = None
+    scope_valid: Optional[bool] = None
+    scope_reason: Optional[str] = None
+    model_type: Optional[str] = None
+    node2_status: Optional[str] = None
+    node3_status: Optional[str] = None
+    has_chat_history: bool = False
+
+
+class ChatHistoryEntry(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str
+
+
+class SessionArtifactsResponse(BaseModel):
+    session_id: str
+    implementation_files: list[str] = []
+    acceleration_files: list[str] = []
+
+
+class ArtifactContentResponse(BaseModel):
+    session_id: str
+    artifact_group: Literal["implementation", "acceleration"]
+    file_name: str
+    language: str
+    content: str

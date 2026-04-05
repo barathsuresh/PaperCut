@@ -129,11 +129,20 @@ def _call_nvidia_chat(
             ) from exc
 
         if content is None:
-            body = resp.text[:500]
-            raise NATError(
-                f"NVIDIA API returned null content despite generating tokens "
-                f"(possible content filter or model refusal) | body: {body}"
-            )
+            # Nemotron thinking-mode: actual answer lands in reasoning_content
+            reasoning = data["choices"][0]["message"].get("reasoning_content")
+            if reasoning and reasoning.strip():
+                logger.info(
+                    "NAT — content null, falling back to reasoning_content | model=%s len=%d",
+                    model, len(reasoning),
+                )
+                content = reasoning
+            else:
+                body = resp.text[:500]
+                raise NATError(
+                    f"NVIDIA API returned null content despite generating tokens "
+                    f"(possible content filter or model refusal) | body: {body}"
+                )
         usage = data.get("usage", {})
 
         logger.info(

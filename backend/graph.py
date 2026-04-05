@@ -28,11 +28,15 @@ async def _node0(state: AgentState) -> dict:
 
 
 async def _node1(state: AgentState) -> dict:
+    from backend.nodes.node1_ingestor import ScopeRejectedError
     logger.info("Graph — entering node1")
     try:
         blueprint = await run_node1(state["pdf_gcs_uri"])
         logger.info("Graph — node1 done | model_type=%s", blueprint.model_type)
         return {"blueprint": blueprint}
+    except ScopeRejectedError as e:
+        logger.warning("Graph — node1 scope rejected: %s", e.reason)
+        return {"scope_valid": False, "scope_reason": e.reason}
     except Exception as e:
         logger.error("Graph — node1 error: %s", e)
         return {"error": str(e)}
