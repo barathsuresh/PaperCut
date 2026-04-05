@@ -46,7 +46,7 @@ def load_scaffold(scaffold_dir: Path | None = None) -> dict[str, str]:
     files: dict[str, str] = {}
     for f in src.iterdir():
         if f.suffix in (".py", ".yaml", ".yml"):
-            files[f.name] = f.read_text()
+            files[f.name] = f.read_text(encoding="utf-8")
     if not files:
         raise FileNotFoundError(f"No scaffold files found in {src}")
     return files
@@ -233,7 +233,8 @@ def run_node3(
 
     # Write bottleneck analysis
     (out / "bottleneck_analysis.json").write_text(
-        json.dumps(bottlenecks, indent=2)
+        json.dumps(bottlenecks, indent=2, ensure_ascii=False),
+        encoding="utf-8",
     )
     logger.info("Identified %d bottlenecks", len(bottlenecks))
 
@@ -259,7 +260,7 @@ def run_node3(
             for section in missing:
                 stub_content += f"\n\n// === {section} ===\n// [TO BE COMPLETED]\n"
 
-        (out / filename).write_text(stub_content)
+        (out / filename).write_text(stub_content, encoding="utf-8")
         stub_files.append(filename)
         logger.info("Wrote %s", filename)
 
@@ -271,7 +272,10 @@ def run_node3(
         "note": "ANNOTATED STUBS — not executable CUDA kernels. "
                 "These are hardware blueprints showing optimization rationale.",
     }
-    (out / "hardware_blueprint_meta.json").write_text(json.dumps(meta, indent=2))
+    (out / "hardware_blueprint_meta.json").write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
     return out
 

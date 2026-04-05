@@ -53,3 +53,7 @@ def validate_runtime_config(*, requires_bucket: bool = False) -> None:
             f"Missing required environment variables: {joined}. "
             "Copy .env.example to .env and set your GCP values."
         )
+
+
+def validate() -> None:
+    validate_runtime_config(requires_bucket=True)
