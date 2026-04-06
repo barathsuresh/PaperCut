@@ -23,23 +23,23 @@
 ## Pipeline
 
 ```
-Node 0  Gemini Flash  →  scope validate  →  PASS / FAIL
-           ↓ PASS only
-Node 1  Gemini Pro    →  extract ResearchContract JSON
-           ↓
-Node 2                →  PyTorch scaffold
-           ↓
-Node 3                →  CUDA / hardware blueprint
+Node 0  Gemini 2.5 Flash       →  scope validate  →  PASS / FAIL
+              ↓ PASS only
+Node 1  Gemini 2.5 Pro         →  extract ResearchContract JSON
+              ↓
+Node 2  Qwen2.5-Coder 32B      →  PyTorch scaffold (model.py, train.py, dataset.py, config.yaml)
+              ↓
+Node 3  Nemotron Super 49B     →  annotated CUDA C++ stubs + bottleneck analysis
 ```
 
-| Node | Model | Role | Status |
-|------|-------|------|--------|
-| Node 0 | Gemini 2.5 Flash | Scope validator — strict PASS/FAIL for ML papers | Working |
-| Node 1 | Gemini 2.5 Pro | Architecture ingestor — extracts typed JSON blueprint | Working |
-| Node 2 | — | PyTorch scaffold generator | Teammate stub |
-| Node 3 | — | CUDA hardware blueprint generator | Teammate stub |
+| Node | Model | Role |
+|------|-------|------|
+| Node 0 | Gemini 2.5 Flash (Google) | Scope validator — strict PASS/FAIL for ML papers |
+| Node 1 | Gemini 2.5 Pro (Google) | Architecture ingestor — extracts typed JSON blueprint |
+| Node 2 | Qwen2.5-Coder 32B (NVIDIA NIM) | PyTorch scaffold generator |
+| Node 3 | Nemotron Super 49B (NVIDIA NIM) | CUDA stub + bottleneck analysis generator |
 
-The graph is compiled with **LangGraph** in `backend/graph.py`. FastAPI routes in `backend/routes/` call node functions directly for per-step endpoints and stream the full pipeline via SSE.
+The graph is compiled with **LangGraph** in `backend/graph.py`. Node 2 and Node 3 call **NVIDIA's hosted NIM API** (OpenAI-compatible) via the `nat/` package. FastAPI routes in `backend/routes/` stream the full pipeline via SSE.
 
 ---
 
@@ -51,22 +51,41 @@ ArXiv_Agent/
 │   ├── main.py                  # FastAPI app, CORS, lifespan
 │   ├── config.py                # Env vars, model strings
 │   ├── graph.py                 # LangGraph pipeline
-│   ├── app_state.py             # In-memory session store
+│   ├── app_state.py             # In-memory session store + artefact upload helpers
 │   ├── session_store.py         # GCS session persistence
 │   ├── nodes/
 │   │   ├── node0_validator.py   # Gemini Flash scope check
 │   │   ├── node1_ingestor.py    # Gemini Pro extraction
-│   │   ├── node2_client.py      # PyTorch scaffold (teammate)
-│   │   └── node3_client.py      # CUDA blueprint (teammate)
+│   │   ├── node2_client.py      # Bridge → nodes/node2_pytorch_architect.py
+│   │   └── node3_client.py      # Bridge → nodes/node3_hardware_blueprint.py
 │   ├── routes/
 │   │   ├── sessions.py          # CRUD + artifact endpoints
 │   │   ├── pipeline.py          # /run/pipeline/stream SSE
 │   │   ├── chat.py              # /chat/stream SSE
 │   │   └── health.py            # GET /health
+│   ├── services/
+│   │   ├── pipeline_runtime.py  # Shared codegen node runner + SSE helpers
+│   │   ├── pipeline_state.py    # Applies node results into SessionData
+│   │   └── session_views.py     # Shapes SessionData into API responses
+│   ├── chat/
+│   │   └── chat_handler.py      # Context builder + Gemini streaming chat
 │   ├── schemas/                 # Pydantic models
 │   └── tools/
-│       ├── gemini_client.py     # Vertex AI SDK wrapper
+│       ├── gemini_client.py     # google-genai SDK wrapper
 │       └── artifact_store.py    # GCS artifact upload/download
+├── nodes/                       # Real Node 2 & 3 implementations
+│   ├── node2_pytorch_architect.py   # Qwen2.5-Coder scaffold generator
+│   └── node3_hardware_blueprint.py  # Nemotron CUDA stub generator
+├── nat/                         # NVIDIA NIM API client package
+│   ├── nat_client.py            # HTTP caller, NATError/NATTimeoutError/NATAuthError
+│   ├── nat_config.py            # Reads NVIDIA_API_KEY, model names from .env
+│   └── __init__.py              # Exports make_nat_caller_code/reason factories
+├── contracts/
+│   └── architecture_blueprint_schema.json
+├── outputs/                     # Local artefact root (gitignored)
+│   └── sessions/{session_id}/
+│       ├── pytorch_scaffold/
+│       └── hardware_blueprint/
 └── frontend/
     ├── src/
     │   ├── App.jsx              # Root state, routing
@@ -105,7 +124,7 @@ ArXiv_Agent/
 
 ```bash
 git clone <repo-url>
-cd ArXiv_Agent
+cd PaperCut
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -116,14 +135,22 @@ pip install -r requirements.txt
 Create a `.env` file at the repo root:
 
 ```env
+# Google Cloud
 GCP_PROJECT_ID=your-project-id
 GCP_BUCKET_NAME=your-gcs-bucket
 GCP_REGION=us-central1
 GOOGLE_APPLICATION_CREDENTIALS=./gcp-key.json
 
-# Optional — defaults shown
+# Gemini (defaults shown)
 GEMINI_FLASH_MODEL=gemini-2.5-flash
 GEMINI_PRO_MODEL=gemini-2.5-pro
+
+# NVIDIA NIM
+NVIDIA_API_KEY=nvapi-...
+NVIDIA_API_BASE=https://integrate.api.nvidia.com/v1
+NAT_MODEL_CODE=qwen/qwen2.5-coder-32b-instruct
+NAT_MODEL_REASON=nvidia/nemotron-super-49b-v1
+NAT_TIMEOUT=120
 ```
 
 Place your GCP service-account key at `gcp-key.json` (gitignored). The key needs **Storage Object Admin** and **Vertex AI User** roles.
@@ -253,7 +280,8 @@ pytest backend/tests/test_node0.py -v
 ## Notes
 
 - Sessions are loaded from GCS on server start, so they survive restarts.
-- Node 2 and Node 3 are teammate-owned stubs — they return `{"status": "not_implemented"}` until implemented.
+- Node 2 runs Qwen2.5-Coder 32B via NVIDIA NIM; Node 3 runs Nemotron Super 49B. Both are called through the `nat/` package which handles timeouts, retries, and auth errors uniformly.
+- Node 3 retries up to 2 times on `NATError` — Nemotron occasionally returns null content on the first attempt.
 - All Gemini JSON responses are passed through `strip_markdown_fences()` before `json.loads()` to handle code-fenced model responses.
-- Vertex AI is initialised lazily on first call via `vertexai.init()` in `gemini_client.py`.
-- All I/O is non-blocking: `generate_content_async` for Gemini, `asyncio.to_thread` for GCS and Node 2/3, fire-and-forget `asyncio.create_task` for background artefact uploads.
+- All I/O is non-blocking: `generate_content_async` for Gemini, `asyncio.to_thread` for GCS and Node 2/3 (CPU-bound), fire-and-forget `asyncio.create_task` for background artefact uploads.
+- Chat context includes the blueprint JSON plus up to 3000 chars each from `model.py`, `train.py`, `dataset.py`, `config.yaml`. Files are read from local `outputs/` first, falling back to GCS download.
